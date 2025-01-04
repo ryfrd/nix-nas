@@ -1,80 +1,97 @@
 { pkgs, config, ... }: {
 
-  imports = [
-    ./hardware-configuration.nix
-  ];
+  imports = [ ./hardware-configuration.nix ];
 
-  # automatic nix garbage collection
-  nix.gc = {
-    automatic = true;
-    dates = "weekly";
+  boot.supportedFilesystems = [ "zfs" ];
+  boot.zfs.forceImportRoot = false;
+  networking.hostId = "f42e33e7";
+  # import pool at boot
+  boot.zfs.extraPools = [ "warhead" ];
+  # automatic scrubbing
+  services.zfs.autoScrub.enable = true;
+  services.btrfs.autoScrub.enable = true;
+
+  # zfs snapshots
+  services.sanoid = {
+    enable = true;
+    datasets = {
+      "warhead/high-prio" = {
+        autoprune = true;
+        autosnap = true;
+        recursive = true;
+        hourly = 24;
+        daily = 7;
+        monthly = 12;
+      };
+    };
   };
 
-  nix.settings = {
-    # enable flakes
-    experimental-features = "nix-command flakes";
-    # saves some disk space
-    auto-optimise-store = true;
-    # allows remote rebuild
-    trusted-users = [ "james" ];
-  };
-
-  networking.hostName = "keep";
+  networking.hostName = "homelab";
 
   # bootloader
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
 
-  # firewall !!!
-  networking.firewall.enable = true;
-
-  # ssh access
-  services.openssh = {
-    enable = true;
-    settings = {
-      PasswordAuthentication = false;
-      PermitRootLogin = "no";
-    };
-  };
-  # open ssh port
-  networking.firewall.allowedTCPPorts = [ 22 ];
-
-  # tailscale daemon
-  services.tailscale.enable = true;
-
-  programs.fish.enable = true;
-  users.users.james = {
-    isNormalUser = true;
-    initialPassword = "thisisabadpassword";
-    shell = pkgs.fish;
-    # sudo
-    extraGroups = [ "wheel" "docker" ];
-    # let me in
-    openssh.authorizedKeys.keys = [
-      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPzFa1hmBsCrPL5HvJZhXVEaWiZIMi34oR6AOcKD35hQ james@countess"
-    ];
-  };
-
   time.timeZone = "Europe/London";
   i18n.defaultLocale = "en_GB.UTF-8";
 
-  # install some basic stuff for humans
+  # enable quicksync
+  boot.kernelParams = [ "i915.enable_guc=2" ];
+  hardware.graphics = {
+    enable = true;
+    extraPackages = with pkgs; [ intel-media-driver intel-compute-runtime ];
+  };
+
+  nix = {
+    gc.automatic = true;
+    gc.options = "-d";
+    settings = { experimental-features = "nix-command flakes"; };
+  };
+
+  services.tailscale.enable = true;
+
+  users.users = {
+    james = {
+      isNormalUser = true;
+      shell = pkgs.fish;
+      initialPassword = "changethisyoupickle";
+      extraGroups = [ "wheel" "docker" ];
+      # let laptop in
+      openssh.authorizedKeys.keys = [
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPzFa1hmBsCrPL5HvJZhXVEaWiZIMi34oR6AOcKD35hQ james@countess" # laptop
+      ];
+    };
+  };
+
+  programs.fish.enable = true;
+
+  systemd.extraConfig = ''
+    DefaultTimeoutStopSec=30s
+  '';
+
   environment.systemPackages = with pkgs; [
-    neovim
-    git
-    tree
-    curl
-    dua
-    ranger
+    # cronjob deps
     rsync
+    curl
+
     docker-compose
-    neofetch
   ];
+
+  services.cron = {
+    enable = true;
+    systemCronJobs =
+      [ "@daily root  sh /etc/cronjobs/hetzner-backup.sh /warhead/high-prio" ];
+  };
+
+  environment.etc = {
+    "cronjobs/hetzner-backup.sh" = { source = ./cronjobs/hetzner-backup.sh; };
+  };
 
   virtualisation.docker = {
     enable = true;
-    liveRestore = false;
     autoPrune.enable = true;
+    autoPrune.flags = [ "-a" ];
+    daemon.settings = { dns = [ "1.1.1.1" ]; };
   };
 
   powerManagement = {
@@ -83,11 +100,13 @@
     powertop.enable = true;
   };
 
-  services.zfs.autoScrub.enable = true;
-  services.btrfs.autoScrub.enable = true;
-
-  services.cron = {
+  services.openssh = {
     enable = true;
+    settings = {
+      PasswordAuthentication = false;
+      PermitRootLogin = "no";
+    };
   };
 
+  system.stateVersion = "23.11";
 }

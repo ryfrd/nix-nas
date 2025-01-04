@@ -1,11 +1,9 @@
 {
-  inputs.nixpkgs.url = github:NixOS/nixpkgs/nixos-23.05;
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
   outputs = { nixpkgs, ... }: {
-    nixosConfigurations."keep" = nixpkgs.lib.nixosSystem {
+    nixosConfigurations."homelab" = nixpkgs.lib.nixosSystem {
       system = "x86_64-linux";
-      modules = [
-        ./configuration.nix
-      ];
+      modules = [ ./configuration.nix ];
     };
   };
 }
